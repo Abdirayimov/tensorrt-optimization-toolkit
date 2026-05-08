@@ -1,9 +1,12 @@
 #include "trt_toolkit/plugin/plugin_registry.hpp"
 
 #include <NvInfer.h>
-#include <NvInferPlugin.h>
 
 #include <atomic>
+
+#ifndef TRT_NO_NVINFER_PLUGIN
+#include <NvInferPlugin.h>
+#endif
 
 #include "trt_toolkit/plugin/gelu_plugin.hpp"
 #include "trt_toolkit/utils/logger.hpp"
@@ -25,8 +28,10 @@ void register_builtin_plugins() {
     bool expected = false;
     if (!g_registered.compare_exchange_strong(expected, true)) return;
 
+#ifndef TRT_NO_NVINFER_PLUGIN
     // Standard NVIDIA plugin library (registers things like NMS, ROIAlign).
     initLibNvInferPlugins(&utils::tensorrt_logger(), "");
+#endif
 
     auto* registry = nvinfer1::getPluginRegistry();
     if (registry == nullptr) {
