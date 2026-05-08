@@ -31,6 +31,7 @@ file(GLOB_RECURSE TRT_TOOLKIT_SOURCES
     "${CMAKE_SOURCE_DIR}/src/accuracy/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/plugin/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/plugin/*.cu.cpp"
+    "${CMAKE_SOURCE_DIR}/src/debug/*.cpp"
 )
 
 add_library(trt_toolkit STATIC ${TRT_TOOLKIT_SOURCES})
