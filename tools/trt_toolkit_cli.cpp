@@ -1,8 +1,9 @@
-// trt-toolkit CLI:  build / benchmark / accuracy subcommands.
+// trt-toolkit CLI:  build / benchmark / accuracy / inspect subcommands.
 //
 //   trt-toolkit build      --onnx M.onnx --output M.engine [...]
-//   trt-toolkit benchmark  --engine M.engine [--iterations 200] [--batch B]
+//   trt-toolkit benchmark  --engine M.engine [--iterations 200]
 //   trt-toolkit accuracy   --reference REF.engine --candidate CAND.engine
+//   trt-toolkit inspect    PATH       (auto-detects .onnx vs .engine)
 
 #include <spdlog/spdlog.h>
 
@@ -23,6 +24,8 @@
 #include "trt_toolkit/builder/dynamic_shapes.hpp"
 #include "trt_toolkit/builder/engine_builder.hpp"
 #include "trt_toolkit/builder/int8_calibrator.hpp"
+#include "trt_toolkit/debug/engine_inspector.hpp"
+#include "trt_toolkit/debug/onnx_inspector.hpp"
 #include "trt_toolkit/runner/trt_runner.hpp"
 #include "trt_toolkit/utils/cuda_helpers.hpp"
 #include "trt_toolkit/utils/logger.hpp"
@@ -62,8 +65,37 @@ void print_help() {
         << "  build       Compile an ONNX file into a serialized .engine\n"
         << "  benchmark   Latency / throughput / memory for a built engine\n"
         << "  accuracy    Compare outputs of a reference and candidate engine\n"
+        << "  inspect     Print metadata for a .onnx or .engine file\n"
         << "\n"
         << "Run `trt-toolkit <sub> --help` for subcommand-specific options.\n";
+}
+
+int inspect_subcommand(const std::vector<std::string>& args) {
+    using namespace trt_toolkit;
+
+    if (args.empty() || args[0] == "--help" || args[0] == "-h") {
+        std::cout << "Usage: trt-toolkit inspect PATH\n"
+                  << "\n"
+                  << "PATH is either a .onnx or a .engine file; the format is\n"
+                  << "auto-detected from the extension.\n";
+        return EXIT_SUCCESS;
+    }
+
+    utils::init_logger("info", false);
+
+    const std::filesystem::path path = args[0];
+    const auto ext = path.extension().string();
+    if (ext == ".onnx") {
+        const auto summary = debug::inspect_onnx(path);
+        summary.format(std::cout);
+    } else if (ext == ".engine" || ext == ".plan" || ext == ".trt") {
+        const auto summary = debug::inspect(path);
+        summary.format(std::cout);
+    } else {
+        throw std::invalid_argument(
+            "inspect: unrecognised extension '" + ext + "' (use .onnx or .engine)");
+    }
+    return EXIT_SUCCESS;
 }
 
 // ============================================================================
@@ -337,6 +369,7 @@ int main(int argc, char** argv) {
         if (subcommand == "build") return build_subcommand(rest);
         if (subcommand == "benchmark") return benchmark_subcommand(rest);
         if (subcommand == "accuracy") return accuracy_subcommand(rest);
+        if (subcommand == "inspect") return inspect_subcommand(rest);
         if (subcommand == "--help" || subcommand == "-h") {
             print_help();
             return EXIT_SUCCESS;
