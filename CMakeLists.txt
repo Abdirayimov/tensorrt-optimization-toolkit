@@ -66,6 +66,17 @@ if(BUILD_TOOLS)
     target_link_libraries(trt-toolkit PRIVATE trt_toolkit)
 endif()
 
+if(BUILD_EXAMPLES)
+    foreach(ex
+            01_resnet50_fp16
+            02_yolov8_int8_calibration
+            03_dynamic_batch
+            04_custom_plugin)
+        add_executable(${ex} examples/${ex}.cpp)
+        target_link_libraries(${ex} PRIVATE trt_toolkit)
+    endforeach()
+endif()
+
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
