@@ -14,6 +14,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 option(BUILD_TOOLS "Build trt-toolkit CLI" ON)
+option(BUILD_EXAMPLES "Build standalone examples" ON)
 option(BUILD_TESTS "Build smoke tests" OFF)
 
 # ---- Dependencies ----
@@ -26,6 +27,10 @@ file(GLOB_RECURSE TRT_TOOLKIT_SOURCES
     "${CMAKE_SOURCE_DIR}/src/utils/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/builder/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/runner/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/benchmark/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/accuracy/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/plugin/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/plugin/*.cu.cpp"
 )
 
 add_library(trt_toolkit STATIC ${TRT_TOOLKIT_SOURCES})
@@ -42,6 +47,18 @@ target_link_libraries(trt_toolkit
         TensorRT::nvinfer
         TensorRT::nvonnxparser
 )
+
+# nvinfer_plugin is optional; we only link it if the user has it
+# installed. Without it, register_builtin_plugins() still runs but the
+# stock NVIDIA plugins (NMS, ROIAlign, ...) will not be available.
+find_library(TRT_NVINFER_PLUGIN_LIB nvinfer_plugin
+    HINTS /usr/lib/x86_64-linux-gnu /usr/local/lib ${TensorRT_ROOT}/lib)
+if(TRT_NVINFER_PLUGIN_LIB)
+    target_link_libraries(trt_toolkit PUBLIC ${TRT_NVINFER_PLUGIN_LIB})
+else()
+    target_compile_definitions(trt_toolkit PRIVATE TRT_NO_NVINFER_PLUGIN=1)
+    message(WARNING "libnvinfer_plugin not found - stock NVIDIA plugins will not register")
+endif()
 set_target_properties(trt_toolkit PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(BUILD_TOOLS)
