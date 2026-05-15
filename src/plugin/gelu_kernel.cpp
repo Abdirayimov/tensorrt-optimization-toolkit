@@ -11,7 +11,7 @@
 
 #include <cuda_runtime.h>
 
-#include <NvInferRuntimeBase.h>
+#include <NvInferRuntime.h>
 
 #include <cmath>
 #include <cstdint>

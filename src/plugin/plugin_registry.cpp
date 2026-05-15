@@ -33,7 +33,7 @@ void register_builtin_plugins() {
     initLibNvInferPlugins(&utils::tensorrt_logger(), "");
 #endif
 
-    auto* registry = nvinfer1::getPluginRegistry();
+    auto* registry = ::getPluginRegistry();
     if (registry == nullptr) {
         TRT_LOG_WARN("getPluginRegistry returned null; toolkit plugins will not be visible");
         return;
