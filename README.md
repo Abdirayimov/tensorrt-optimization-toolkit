@@ -14,6 +14,42 @@
 
 ---
 
+## Demo
+
+<p align="center">
+  <img src="docs/assets/trt_toolkit_demo.png" width="760" alt="trt-toolkit build, inspect, and benchmark on a ResNet18 FP16 engine">
+</p>
+
+The actual `trt-toolkit` CLI compiling a ResNet18 ONNX into an FP16
+TensorRT engine, inspecting it, and benchmarking it — captured on an
+RTX 4080 Laptop GPU. `build` writes the engine, `inspect` reports the
+layer count / device memory / bindings, and `benchmark` reports
+CUDA-event latency percentiles and throughput (~15k samples/s at
+batch 8 here).
+
+```console
+$ trt-toolkit build --onnx resnet18.onnx --output resnet18_fp16.engine \
+      --precision fp16 --input data \
+      --min-shape 1x3x224x224 --opt-shape 8x3x224x224 --max-shape 16x3x224x224
+  building engine: precision=FP16 workspace=4096 MiB profile=<profile attached>
+  wrote engine (24 MiB) to resnet18_fp16.engine
+
+$ trt-toolkit inspect resnet18_fp16.engine
+  layers: 59   device memory: 36 MiB   optimization profiles: 1
+  [in ] data    FP32  shape=-1x3x224x224  vol=150528
+  [out] logits  FP32  shape=-1x1000       vol=1000
+
+$ trt-toolkit benchmark --engine resnet18_fp16.engine --batch 8 --iterations 500
+  [latency]    p50=0.488ms  p90=0.570ms  p95=0.979ms  p99=1.296ms
+  [throughput] batch=8  1888 batches/s, 15108 samples/s
+```
+
+> Built and run inside the project's DeepStream Docker image on an
+> RTX 4080. The ResNet18 ONNX is a one-line torchvision export (the
+> documented model-prep step); everything after it is this C++ tool.
+
+---
+
 ## Why this exists
 
 Most "TensorRT tutorial" repos stop after a triumphant FP32 -> FP16

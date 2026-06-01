@@ -111,6 +111,38 @@ void TrtRunner::set_input_shape(const std::string& name,
     }
     TRT_CUDA_CHECK(cudaMalloc(&ptr, info.volume * info.element_size));
     impl_->context->setTensorAddress(name.c_str(), ptr);
+
+    // Setting an input shape can make previously-dynamic output shapes
+    // concrete. Re-query every output binding from the context and
+    // (re)allocate its device buffer so the outputs are bound before
+    // enqueue. Without this, a dynamic-batch engine would have no
+    // address set for its outputs and enqueueV3 would fail.
+    for (auto& out : bindings_) {
+        if (out.is_input) continue;
+        const auto dims = impl_->context->getTensorShape(out.name.c_str());
+        if (dims.nbDims < 0) continue;  // not yet resolvable
+        std::vector<std::int64_t> resolved;
+        resolved.reserve(static_cast<std::size_t>(dims.nbDims));
+        bool concrete = true;
+        for (std::int32_t k = 0; k < dims.nbDims; ++k) {
+            resolved.push_back(dims.d[k]);
+            if (dims.d[k] < 0) concrete = false;
+        }
+        if (!concrete) continue;
+        const std::size_t new_vol = volume_of(resolved);
+        if (new_vol == out.volume && impl_->device_buffers[out.name] != nullptr) {
+            continue;  // unchanged, already allocated
+        }
+        out.shape = resolved;
+        out.volume = new_vol;
+        void*& optr = impl_->device_buffers[out.name];
+        if (optr != nullptr) {
+            cudaFree(optr);
+            optr = nullptr;
+        }
+        TRT_CUDA_CHECK(cudaMalloc(&optr, out.volume * out.element_size));
+        impl_->context->setTensorAddress(out.name.c_str(), optr);
+    }
 }
 
 void TrtRunner::copy_input(const std::string& name, const void* host_src, std::size_t bytes,

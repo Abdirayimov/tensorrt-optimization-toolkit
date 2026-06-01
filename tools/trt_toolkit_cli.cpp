@@ -223,6 +223,7 @@ void print_benchmark_help() {
     std::cout << "Usage: trt-toolkit benchmark --engine ENGINE [options]\n"
               << "\n"
               << "Optional:\n"
+              << "  --batch N              Concrete batch for dynamic engines. Default: 1\n"
               << "  --warmup N             Default: 25\n"
               << "  --iterations N         Default: 200\n";
 }
@@ -233,6 +234,7 @@ int benchmark_subcommand(const std::vector<std::string>& args) {
     std::string engine_path;
     std::size_t warmup = 25;
     std::size_t iterations = 200;
+    std::int64_t batch = 1;
 
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto& a = args[i];
@@ -244,6 +246,7 @@ int benchmark_subcommand(const std::vector<std::string>& args) {
         };
         if (a == "--help" || a == "-h") { print_benchmark_help(); return EXIT_SUCCESS; }
         else if (a == "--engine") engine_path = take_value(a);
+        else if (a == "--batch") batch = std::stoll(take_value(a));
         else if (a == "--warmup") warmup = std::stoull(take_value(a));
         else if (a == "--iterations") iterations = std::stoull(take_value(a));
         else throw std::invalid_argument("unknown benchmark flag: " + a);
@@ -260,13 +263,28 @@ int benchmark_subcommand(const std::vector<std::string>& args) {
     runner::TrtRunner trt_runner(engine_path);
     const auto mem_after_load = mem.after();
 
-    // Random fill of every input.
+    // Resolve any dynamic dimensions to a concrete shape, then random-fill
+    // every input. Engines exported with a dynamic batch (shape -1x...)
+    // have no allocated device buffer until a concrete shape is set; this
+    // is what `--batch` is for.
     std::mt19937 rng(42);
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
     utils::CudaStream stream;
     for (const auto& b : trt_runner.bindings()) {
         if (!b.is_input) continue;
-        std::vector<float> blob(b.volume * b.element_size / sizeof(float), 0.0f);
+        bool dynamic = false;
+        std::vector<std::int64_t> resolved = b.shape;
+        for (auto& d : resolved) {
+            if (d < 0) {
+                d = batch;
+                dynamic = true;
+            }
+        }
+        if (dynamic) {
+            trt_runner.set_input_shape(b.name, resolved);
+        }
+        const auto& rb = trt_runner.binding(b.name);
+        std::vector<float> blob(rb.volume * rb.element_size / sizeof(float), 0.0f);
         for (auto& v : blob) v = dist(rng);
         trt_runner.copy_input(b.name, blob.data(), blob.size() * sizeof(float), stream.get());
     }
@@ -282,6 +300,7 @@ int benchmark_subcommand(const std::vector<std::string>& args) {
     benchmark::ThroughputProbeOptions tp;
     tp.warmup = warmup;
     tp.iterations = iterations;
+    tp.batch_size = static_cast<std::size_t>(batch);
     auto thr = benchmark::measure_throughput([&] { enqueue(); },
                                              [&] { stream.synchronize(); }, tp);
 

@@ -17,6 +17,9 @@ void run_engine(runner::TrtRunner& runner,
                 std::vector<std::string>& output_names) {
     utils::CudaStream stream;
 
+    // Resolve any dynamic input dimensions to a concrete shape (the
+    // batch size is inferred from the provided blob). Engines exported
+    // with a dynamic batch have no device buffer until a shape is set.
     std::size_t input_idx = 0;
     for (const auto& b : runner.bindings()) {
         if (!b.is_input) continue;
@@ -24,9 +27,31 @@ void run_engine(runner::TrtRunner& runner,
             throw std::runtime_error("not enough input blobs for engine inputs");
         }
         const auto& blob = input_blobs[input_idx];
+
+        bool dynamic = false;
+        std::size_t static_vol = 1;
+        for (auto d : b.shape) {
+            if (d < 0) dynamic = true;
+            else static_vol *= static_cast<std::size_t>(d);
+        }
+        if (dynamic) {
+            // Distribute the blob across the static dims to recover the
+            // dynamic dim (typically batch). Falls back to 1 when the
+            // blob does not divide evenly.
+            const std::size_t inferred = (static_vol > 0 && blob.size() % static_vol == 0)
+                                             ? blob.size() / static_vol
+                                             : 1;
+            std::vector<std::int64_t> resolved = b.shape;
+            for (auto& d : resolved) {
+                if (d < 0) d = static_cast<std::int64_t>(inferred);
+            }
+            runner.set_input_shape(b.name, resolved);
+        }
+
+        const auto& rb = runner.binding(b.name);
         const std::size_t expected_floats =
-            (b.element_size > 0) ? (b.volume * b.element_size) / sizeof(float) : 0;
-        if (blob.size() != expected_floats && expected_floats > 0) {
+            (rb.element_size > 0) ? (rb.volume * rb.element_size) / sizeof(float) : 0;
+        if (expected_floats > 0 && blob.size() != expected_floats) {
             throw std::runtime_error("input blob size mismatch for binding " + b.name);
         }
         runner.copy_input(b.name, blob.data(), blob.size() * sizeof(float), stream.get());
